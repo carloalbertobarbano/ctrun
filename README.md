@@ -1,6 +1,3 @@
-Here’s a **short, clean, informative `README.md`** for the wrapper:
-
-````markdown
 # ctrun
 
 `ctrun` is a lightweight wrapper that makes running CLI tools inside Docker
