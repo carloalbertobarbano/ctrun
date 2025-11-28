@@ -5,6 +5,12 @@ set -euo pipefail
 #   ctrun IMAGE [CMD ...]
 # Or set DOCKER_WRAPPER_IMAGE and run:
 #   ctrun [CMD ...]
+#
+# Environment variables:
+#   DOCKER_WRAPPER_IMAGE          - Default image to use
+#   DOCKER_WRAPPER_ENV_WHITELIST  - Space-separated list of env vars to pass through
+#   DOCKER_WRAPPER_RUN_AS_ROOT    - Set to "1" or "true" to run as root (no uid/gid mapping)
+#   DOCKER_WRAPPER_MOUNTS         - Colon-separated list of additional mounts (e.g., "/host/path:/container/path:/another:/mount")
 
 IMAGE="${DOCKER_WRAPPER_IMAGE:-}"
 
@@ -19,6 +25,12 @@ fi
 
 # Optional: env whitelist
 ENV_WHITELIST="${DOCKER_WRAPPER_ENV_WHITELIST:-}"
+
+# Optional: run as root
+RUN_AS_ROOT="${DOCKER_WRAPPER_RUN_AS_ROOT:-}"
+
+# Optional: additional mounts
+EXTRA_MOUNTS="${DOCKER_WRAPPER_MOUNTS:-}"
 
 uid="$(id -u)"
 gid="$(id -g)"
@@ -37,13 +49,40 @@ else
 fi
 
 # User + mounts
-docker_args+=(
-  -u "${uid}:${gid}"
-  -v "${HOME}:${HOME}"
-  -v "/tmp:/tmp"
-  -v "${workdir}:${workdir}"
-  -w "${workdir}"
-)
+if [[ "$RUN_AS_ROOT" == "1" || "$RUN_AS_ROOT" == "true" ]]; then
+  # Run as root - no user mapping
+  echo "Running as root inside container (no user mapping)" >&2
+  docker_args+=(
+    -v "${HOME}:${HOME}"
+    -v "/tmp:/tmp"
+    -v "${workdir}:${workdir}"
+    -w "${workdir}"
+  )
+else
+  # Normal user mapping
+  docker_args+=(
+    -u "${uid}:${gid}"
+    -v "${HOME}:${HOME}"
+    -v "/tmp:/tmp"
+    -v "${workdir}:${workdir}"
+    -w "${workdir}"
+  )
+fi
+
+# Additional mounts
+if [[ -n "$EXTRA_MOUNTS" ]]; then
+  IFS=':' read -ra MOUNTS <<< "$EXTRA_MOUNTS"
+  i=0
+  while [ $i -lt ${#MOUNTS[@]} ]; do
+    if [ $((i + 1)) -lt ${#MOUNTS[@]} ]; then
+      docker_args+=( -v "${MOUNTS[$i]}:${MOUNTS[$((i+1))]}" )
+      i=$((i + 2))
+    else
+      echo "Warning: Ignoring incomplete mount specification: ${MOUNTS[$i]}" >&2
+      break
+    fi
+  done
+fi
 
 # Basic env
 docker_args+=(
